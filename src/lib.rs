@@ -51,6 +51,36 @@ impl AsyncPaymentProcessor for PaymentsData {
     }
 }
 
+#[derive(Debug, PartialEq)]
+pub struct CsvPaymentsData {
+    rows: Vec<String>,  // Each String is one CSV row: "2025-01-01,100.50,credit,true"
+    position: usize,
+}
+
+#[async_trait]
+impl AsyncPaymentProcessor for CsvPaymentsData {
+    type Payment<'a> = &'a str
+        where Self: 'a;
+
+    async fn next_payment(&mut self) -> Option<Self::Payment<'_>> {
+        if self.position >= self.rows.len() {
+            return None;
+        }
+
+        let res = &self.rows[self.position];
+        self.position += 1;
+        Some(res)
+    }
+
+    async fn process<F, T>(&mut self, f: F) -> Option<T>
+    where 
+        F: Fn(Self::Payment<'_>) -> T + Send,
+        T: Send,
+    {
+        self.next_payment().await.map(f)
+    }
+}
+
 #[cfg(test)]
 mod tests {
     use super::*;
@@ -61,7 +91,7 @@ mod tests {
             r#"{"date":"2025-01-01","amount":100.0,"method":"credit","is_successful":true}"#.to_string(),
             r#"{"date":"2025-01-02","amount":50.0,"method":"debit","is_successful":true}"#.to_string(),
             r#"{"date":"2025-01-03","amount":75.0,"method":"credit","is_successful":false}"#.to_string(),
-        ]
+        ] 
     }
     
     #[tokio::test]
@@ -129,6 +159,53 @@ mod tests {
         }).await;
 
         assert_eq!(amount, None);
+    }
+
+    #[tokio::test]
+    async fn test_csv_next_and_process() {
+        let data = vec![ 
+            r#"2025-01-01","100.0","credit","true"#.to_string(),
+            r#"2025-01-02","150.0","debit","false"#.to_string(),
+        ];
+
+        let mut csv_processor = CsvPaymentsData {
+            rows: data,
+            position: 0,
+        };
+
+        let first = csv_processor.next_payment().await;
+        assert_eq!(
+            first, 
+            Some(r#"2025-01-01","100.0","credit","true"#)
+        );
+
+
+        let amount = csv_processor.process(|csv_str: &str| {
+            let split_as_vals: Vec<String> = csv_str.split(',').map(|x| x.to_string()).collect();
+            split_as_vals[1].trim_matches('"').parse::<f64>().unwrap()
+        }).await;
+
+        assert_eq!(amount, Some(150.0));
+    }
+
+    #[tokio::test]
+    async fn test_borrowing_limitation_documented() {
+        // This test demonstrates the lending limitation by design
+        // UNCOMMENT to verify it won't compile:
+    
+        /*
+        let mut processor = PaymentsData {
+            tx_list: sample_payments(),
+            position: 0,
+        };
+    
+        let payment1 = processor.next_payment().await;
+        let payment2 = processor.next_payment().await;  // ERROR: already borrowed
+    
+        // Fails because: Can't hold multiple mutable borrows of processor
+        // This is BY DESIGN for lending iterators
+        assert_ne!(payment1, payment2);
+        */
     }
 }
 
