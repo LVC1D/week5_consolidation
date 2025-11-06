@@ -65,8 +65,8 @@ pub struct PaymentInfo {
 /// # });
 /// ```
 pub struct PaymentsData {
-    tx_list: Vec<String>, 
-    position: usize,
+    pub tx_list: Vec<String>, 
+    pub position: usize,
 }
 
 #[async_trait]
@@ -137,8 +137,8 @@ impl AsyncPaymentProcessor for PaymentsData {
 /// ```
 #[derive(Debug, PartialEq)]
 pub struct CsvPaymentsData {
-    rows: Vec<String>,  // Each String is one CSV row: "2025-01-01,100.50,credit,true"
-    position: usize,
+    pub rows: Vec<String>,  // Each String is one CSV row: "2025-01-01,100.50,credit,true"
+    pub position: usize,
 }
 
 #[async_trait]
