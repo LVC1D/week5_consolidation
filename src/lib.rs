@@ -1,6 +1,8 @@
 use async_trait::async_trait;
 use serde::{Serialize, Deserialize};
 
+pub mod day1_replication;
+
 #[async_trait]
 pub trait AsyncPaymentProcessor {
     type Payment<'a> where Self: 'a;
@@ -22,6 +24,46 @@ pub struct PaymentInfo {
     is_successful: bool,
 }
 
+/// `PaymentsData` processes a list of payment JSON strings.
+/// 
+/// # GAT Justification
+/// 
+/// This type requires GATs because it yields borrowed `&str` references to payment 
+/// JSON from its owned `Vec<String>`. Each call to `next_payment()` borrows from 
+/// the internal vector with a fresh lifetime tied to that specific call.
+/// 
+/// Without GATs, we couldn't express "return a reference that borrows from self 
+/// with a lifetime determined per method call." The GAT syntax `type Payment<'a>` 
+/// where Self: 'a` explicitly links the borrowed data's lifetime to the implementor.
+/// 
+/// # Lending Iterator Limitation
+/// 
+/// Due to the lending pattern, you cannot hold multiple payment references 
+/// simultaneously. Each `next_payment()` call mutably borrows `self`, and the 
+/// returned `&str` keeps that borrow active.
+/// 
+/// # Example
+/// 
+/// ```
+/// use week5_async_stream_proc::{PaymentsData, AsyncPaymentProcessor};
+/// 
+/// # tokio_test::block_on(async {
+/// let mut processor = PaymentsData {
+///     tx_list: vec![
+///         r#"{"date":"2025-01-01","amount":100.0,"method":"credit","is_successful":true}"#.to_string()
+///     ],
+///     position: 0,
+/// };
+/// 
+/// // Sequential processing works:
+/// let payment = processor.next_payment().await;
+/// assert!(payment.is_some());
+/// 
+/// // Holding multiple refs doesn't compile:
+/// // let p1 = processor.next_payment().await;
+/// // let p2 = processor.next_payment().await; // ERROR: already borrowed
+/// # });
+/// ```
 pub struct PaymentsData {
     tx_list: Vec<String>, 
     position: usize,
@@ -51,6 +93,48 @@ impl AsyncPaymentProcessor for PaymentsData {
     }
 }
 
+/// `CsvPaymentsData` processes a list of payment CSV rows.
+/// 
+/// # GAT Justification
+/// 
+/// This type requires GATs because it yields borrowed `&str` references to payment 
+/// CSV from its owned `Vec<String>`. Each call to `next_payment()` borrows from 
+/// the internal vector with a fresh lifetime tied to that specific call.
+/// 
+/// Without GATs, we couldn't express "return a reference that borrows from self 
+/// with a lifetime determined per method call." The GAT syntax `type Payment<'a>` 
+/// where Self: 'a` explicitly links the borrowed data's lifetime to the implementor.
+/// 
+/// # Lending Iterator Limitation
+/// 
+/// Due to the lending pattern, you cannot hold multiple payment references 
+/// simultaneously. Each `next_payment()` call mutably borrows `self`, and the 
+/// returned `&str` keeps that borrow active.
+/// 
+/// # Example
+/// 
+/// ```
+/// use week5_async_stream_proc::{CsvPaymentsData, AsyncPaymentProcessor};
+/// 
+/// # tokio_test::block_on(async {
+/// let data = vec![ 
+///     r#"2025-01-01","100.0","credit","true"#.to_string(),
+///     r#"2025-01-02","150.0","debit","false"#.to_string(),
+/// ];
+/// let mut csv_processor = CsvPaymentsData {
+///     rows: data,
+///     position: 0,
+/// };
+/// 
+/// // Sequential processing works:
+/// let payment = csv_processor.next_payment().await;
+/// assert!(payment.is_some());
+/// 
+/// // Holding multiple refs doesn't compile:
+/// // let p1 = csv_processor.next_payment().await;
+/// // let p2 = csv_processor.next_payment().await; // ERROR: already borrowed
+/// # });
+/// ```
 #[derive(Debug, PartialEq)]
 pub struct CsvPaymentsData {
     rows: Vec<String>,  // Each String is one CSV row: "2025-01-01,100.50,credit,true"
